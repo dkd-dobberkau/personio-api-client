@@ -176,7 +176,7 @@ Method: `hours_for_weekday(weekday: int)` - Get hours for weekday (0=Monday)
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/personio-api-client
+git clone https://github.com/dkd-dobberkau/personio-api-client
 cd personio-api-client
 
 # Install with dev dependencies

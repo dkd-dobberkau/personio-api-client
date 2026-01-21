@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/your-org/personio-api-client"
+Repository = "https://github.com/dkd-dobberkau/personio-api-client"
 
 [build-system]
 requires = ["hatchling"]
