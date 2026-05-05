@@ -16,10 +16,12 @@ Example:
 """
 
 from .client import PersonioClient
+from .client_v2 import PersonioV2Client
 from .exceptions import (
     PersonioAuthenticationError,
     PersonioConfigurationError,
     PersonioError,
+    PersonioProblemError,
     PersonioRateLimitError,
 )
 from .models import (
@@ -34,10 +36,12 @@ __version__ = "0.1.0"
 __all__ = [
     # Client
     "PersonioClient",
+    "PersonioV2Client",
     # Exceptions
     "PersonioError",
     "PersonioConfigurationError",
     "PersonioAuthenticationError",
+    "PersonioProblemError",
     "PersonioRateLimitError",
     # Models
     "PersonioEmployee",
