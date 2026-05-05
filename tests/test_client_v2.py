@@ -119,6 +119,50 @@ class TestPersonioV2ClientAuthentication:
         assert first == second == "cached-token"
         assert len(httpx_mock.get_requests()) == 1
 
+    def test_expired_token_triggers_proactive_refresh(self, monkeypatch, httpx_mock):
+        monkeypatch.setenv("PERSONIO_CLIENT_ID", "test-id")
+        monkeypatch.setenv("PERSONIO_CLIENT_SECRET", "test-secret")
+
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.personio.de/v2/auth/token",
+            json={"access_token": "first-token", "expires_in": 60},
+        )
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.personio.de/v2/auth/token",
+            json={"access_token": "second-token", "expires_in": 3600},
+        )
+
+        with PersonioV2Client() as client:
+            first = client._authenticate()
+            # Force the cached expiry into the past — simulates time passing.
+            client._token_expires_at = 0.0
+            second = client._authenticate()
+
+        assert first == "first-token"
+        assert second == "second-token"
+        assert len(httpx_mock.get_requests()) == 2
+
+    def test_no_proactive_refresh_when_expires_in_missing(
+        self, monkeypatch, httpx_mock
+    ):
+        monkeypatch.setenv("PERSONIO_CLIENT_ID", "test-id")
+        monkeypatch.setenv("PERSONIO_CLIENT_SECRET", "test-secret")
+
+        # No expires_in -> client must not gamble on TTL; cache the token until 401.
+        httpx_mock.add_response(
+            method="POST",
+            url="https://api.personio.de/v2/auth/token",
+            json={"access_token": "ttl-less-token"},
+        )
+
+        with PersonioV2Client() as client:
+            client._authenticate()
+            client._authenticate()
+
+        assert len(httpx_mock.get_requests()) == 1
+
 
 class TestPersonioV2ClientRequest:
     @staticmethod

@@ -14,6 +14,7 @@ Example:
 
 import logging
 import os
+import time
 from collections.abc import Iterator
 from datetime import date, datetime
 from typing import Any, Literal
@@ -32,6 +33,10 @@ from .models_v2 import PersonioAttendancePeriod, PersonioProject
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.personio.de/v2"
+
+# Refresh the OAuth2 token this many seconds before its declared expiry
+# to absorb clock skew and request latency.
+TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS = 60
 
 
 class PersonioV2Client:
@@ -68,6 +73,7 @@ class PersonioV2Client:
             )
 
         self._access_token: str | None = None
+        self._token_expires_at: float | None = None
         self._client = httpx.Client(timeout=timeout)
 
     def __enter__(self):
@@ -84,9 +90,14 @@ class PersonioV2Client:
     def _authenticate(self) -> str:
         """Obtain an OAuth2 access token via client_credentials grant.
 
-        Returns the cached token if already present.
+        Returns the cached token while it is still valid; refreshes proactively
+        before the declared expiry. When the server omits ``expires_in`` the
+        token is cached indefinitely until the API returns 401.
         """
-        if self._access_token:
+        if self._access_token and (
+            self._token_expires_at is None
+            or time.monotonic() < self._token_expires_at
+        ):
             return self._access_token
 
         logger.debug("Authenticating with Personio V2 (client_credentials)...")
@@ -124,6 +135,13 @@ class PersonioV2Client:
             )
 
         self._access_token = token
+        expires_in = data.get("expires_in")
+        if isinstance(expires_in, (int, float)) and expires_in > 0:
+            self._token_expires_at = (
+                time.monotonic() + expires_in - TOKEN_EXPIRY_SAFETY_BUFFER_SECONDS
+            )
+        else:
+            self._token_expires_at = None
         return token
 
     def _request(
@@ -143,6 +161,7 @@ class PersonioV2Client:
         if response.status_code == 401:
             # Token may have been revoked or expired; force re-auth and retry once.
             self._access_token = None
+            self._token_expires_at = None
             token = self._authenticate()
             response = self._send(method, url, token, params, json_data)
 
