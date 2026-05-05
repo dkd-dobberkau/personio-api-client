@@ -2,6 +2,14 @@
 
 Python client for the [Personio](https://www.personio.de/) REST API.
 
+Supports both API versions:
+
+- **`PersonioClient`** (V1) — Employees and Time-Offs (Abwesenheiten).
+- **`PersonioV2Client`** (V2) — Attendance Periods and Projects.
+  Use this if you depend on `/v1/company/attendances` or
+  `/v1/company/attendances/projects`; Personio is shutting these V1
+  endpoints down in 2026.
+
 ## Installation
 
 ```bash
@@ -165,12 +173,93 @@ Property: `employee_name` - Full name or fallback
 
 Method: `hours_for_weekday(weekday: int)` - Get hours for weekday (0=Monday)
 
+## V2 API (Attendances and Projects)
+
+`PersonioV2Client` targets `https://api.personio.de/v2`. It uses the OAuth 2.0
+`client_credentials` flow and reads the same `PERSONIO_CLIENT_ID` /
+`PERSONIO_CLIENT_SECRET` environment variables as the V1 client.
+
+```python
+from datetime import date, datetime, UTC
+from personio_api_client import PersonioV2Client
+
+with PersonioV2Client() as client:
+    # List active projects (cursor pagination handled internally).
+    projects = client.list_projects(status="ACTIVE")
+
+    # Create a project.
+    new_project = client.create_project(
+        name="Phoenix",
+        project_code="PHX-001",
+        billable=True,
+    )
+
+    # List attendance periods for a date range.
+    periods = client.list_attendance_periods(
+        person_ids=["emp-uuid-1", "emp-uuid-2"],
+        start_gte=datetime(2026, 5, 1, tzinfo=UTC),
+        end_lte=datetime(2026, 5, 31, 23, 59, tzinfo=UTC),
+        status="CONFIRMED",
+    )
+
+    # Create an attendance period (server may split it into multiple).
+    created = client.create_attendance_period(
+        person_id="emp-uuid-1",
+        type="WORK",
+        start=datetime(2026, 5, 4, 8, 0, tzinfo=UTC),
+        end=datetime(2026, 5, 4, 16, 30, tzinfo=UTC),
+        project_id=new_project.id,
+        skip_approval=True,
+    )
+```
+
+### V1 vs V2 — what changes
+
+| Aspect | V1 | V2 |
+|--------|----|----|
+| Base URL | `https://api.personio.de/v1` | `https://api.personio.de/v2` |
+| Auth | Custom `POST /v1/auth` | OAuth 2.0 `POST /v2/auth/token` (`grant_type=client_credentials`) |
+| Resource name | `attendances` | `attendance-periods` |
+| IDs | numeric | UUID strings |
+| Pagination | `limit` + `offset` | cursor (`cursor` + `limit`) |
+| Errors | `{success: false, error: {…}}` | RFC 7807 `application/problem+json` |
+| Approval default | implicit skip | requires approval; opt out via `skip_approval=True` |
+| Project status | `active: bool` | `status: "ACTIVE" \| "ARCHIVED"` |
+
+### V2 methods
+
+#### Projects
+- `list_projects(status, ids, names, project_codes, parent_project_id, top_level_only, include, limit)` → `list[PersonioProject]`
+- `get_project(project_id, include=None)` → `PersonioProject`
+- `create_project(name, status="ACTIVE", parent_project_id=None, …)` → `PersonioProject`
+- `update_project(project_id, **fields)` → `None` (HTTP 204)
+- `delete_project(project_id)` → `None` (cascades to subprojects; raises `PersonioProblemError` 422 if attendance records exist)
+- `list_project_members(project_id, limit=200)` → `list[dict]`
+
+#### Attendance periods
+- `list_attendance_periods(ids, person_ids, project_ids, start_gte/lte, end_gte/lte, attribution_date_gte/lte, status, sort, limit)` → `list[PersonioAttendancePeriod]`
+- `get_attendance_period(period_id)` → `PersonioAttendancePeriod`
+- `create_attendance_period(person_id, type, start, end=None, project_id=None, comment=None, skip_approval=False)` → `list[PersonioAttendancePeriod]`
+- `update_attendance_period(period_id, skip_approval=False, **fields)` → `None`
+- `delete_attendance_period(period_id)` → `None`
+
+### V2 models
+
+- `PersonioProject` — `id` (UUID `str`), `name`, `status` (`ACTIVE`/`ARCHIVED`),
+  `assigned_to_all`, `parent_project`, `project_code`, `description`,
+  `cost_center`, `start`, `end`, `billable`, `client_name`, `project_type`,
+  plus any computed fields requested via `include[]`.
+- `PersonioAttendancePeriod` — `id` (UUID), `person`, `type` (`WORK`/`BREAK`),
+  `start`/`end` (datetime refs), `attribution_date`, `status`
+  (`PENDING`/`CONFIRMED`/`REJECTED`), `project`, `comment`.
+
 ## Exceptions
 
 - `PersonioError` - Base exception
 - `PersonioConfigurationError` - Missing credentials
 - `PersonioAuthenticationError` - Invalid credentials (401)
 - `PersonioRateLimitError` - Rate limit exceeded (429)
+- `PersonioProblemError` - V2 RFC 7807 error response (`type`, `title`, `detail`, `instance`)
 
 ## Development
 

@@ -1,6 +1,6 @@
 [project]
 name = "personio-api-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python client for the Personio REST API"
 readme = "README.md"
 license = { text = "MIT" }
