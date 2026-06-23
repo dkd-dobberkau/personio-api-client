@@ -97,7 +97,7 @@ class TestPersonioClientAuthentication:
         monkeypatch.setenv("PERSONIO_CLIENT_SECRET", "test-secret")
 
         httpx_mock.add_response(
-            url="https://api.personio.de/v1/auth?client_id=test-id&client_secret=test-secret",
+            url="https://api.personio.de/v1/auth",
             status_code=401,
         )
 
@@ -115,7 +115,7 @@ class TestPersonioClientAuthentication:
 
         # Mock auth response
         httpx_mock.add_response(
-            url="https://api.personio.de/v1/auth?client_id=test-id&client_secret=test-secret",
+            url="https://api.personio.de/v1/auth",
             json={"success": True, "data": {"token": "test-token"}},
         )
 
@@ -131,6 +131,39 @@ class TestPersonioClientAuthentication:
         assert employees == []
         client.close()
 
+    def test_credentials_sent_in_body_not_query(self, monkeypatch, httpx_mock):
+        """Credentials must be in the POST body, never the query string.
+
+        Personio rejects query-string credentials on POST /v1/auth with
+        403 Forbidden as of 2026-12-01.
+        """
+        import json as json_lib
+
+        monkeypatch.setenv("PERSONIO_CLIENT_ID", "test-id")
+        monkeypatch.setenv("PERSONIO_CLIENT_SECRET", "test-secret")
+
+        httpx_mock.add_response(
+            url="https://api.personio.de/v1/auth",
+            json={"success": True, "data": {"token": "test-token"}},
+        )
+        httpx_mock.add_response(
+            url="https://api.personio.de/v1/company/employees?limit=200&offset=0",
+            json={"success": True, "data": []},
+        )
+
+        client = PersonioClient()
+        client.get_employees()
+
+        auth_request = httpx_mock.get_requests(url="https://api.personio.de/v1/auth")[0]
+        # Credentials must not leak into the URL query string.
+        assert "client_id" not in auth_request.url.query.decode()
+        assert "client_secret" not in auth_request.url.query.decode()
+        # Credentials must be present in the JSON request body.
+        body = json_lib.loads(auth_request.read())
+        assert body == {"client_id": "test-id", "client_secret": "test-secret"}
+
+        client.close()
+
 
 class TestPersonioClientEmployees:
     def test_get_employees(self, monkeypatch, httpx_mock):
@@ -139,7 +172,7 @@ class TestPersonioClientEmployees:
         monkeypatch.setenv("PERSONIO_CLIENT_SECRET", "test-secret")
 
         httpx_mock.add_response(
-            url="https://api.personio.de/v1/auth?client_id=test-id&client_secret=test-secret",
+            url="https://api.personio.de/v1/auth",
             json={"success": True, "data": {"token": "test-token"}},
         )
 
@@ -178,7 +211,7 @@ class TestPersonioClientTimeOffs:
         monkeypatch.setenv("PERSONIO_CLIENT_SECRET", "test-secret")
 
         httpx_mock.add_response(
-            url="https://api.personio.de/v1/auth?client_id=test-id&client_secret=test-secret",
+            url="https://api.personio.de/v1/auth",
             json={"success": True, "data": {"token": "test-token"}},
         )
 

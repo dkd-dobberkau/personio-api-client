@@ -104,9 +104,12 @@ class PersonioClient:
         logger.debug("Authenticating with Personio...")
 
         try:
+            # Credentials are sent in the request body (JSON), not the query
+            # string. Personio rejects query-string credentials on POST /v1/auth
+            # with 403 Forbidden as of 2026-12-01.
             response = self._client.post(
                 f"{self.base_url}/auth",
-                params={
+                json={
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
                 },
